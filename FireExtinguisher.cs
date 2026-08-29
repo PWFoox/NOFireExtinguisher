@@ -66,35 +66,44 @@ namespace NOFireExtinguisher
         {
             int extinguishedCount = 0;
 
-            DamageParticles[] allParticles = aircraft.GetComponentsInChildren<DamageParticles>(true);
+            // Ищем вообще ВСЕ объекты DamageParticles в активной сцене, где бы они ни находились
+            DamageParticles[] allParticles = UnityEngine.Object.FindObjectsOfType<DamageParticles>();
 
-            Plugin.Log?.LogInfo($"[FireExtinguisher] Найдено объектов DamageParticles всего: {allParticles.Length}");
+            Plugin.Log?.LogInfo($"[FireExtinguisher] Всего DamageParticles в мире: {allParticles.Length}");
 
             foreach (DamageParticles dp in allParticles)
             {
+                // Проверяем дистанцию от пожара до центра нашего самолета
+                // 60 метров — хороший радиус, чтобы захватить даже отвалившиеся горящие куски
+                float distance = Vector3.Distance(aircraft.transform.position, dp.transform.position);
+                
+                if (distance > 60f)
+                {
+                    continue; // Пропускаем пожары, которые горят слишком далеко (чужие самолеты)
+                }
+
                 var traverse = Traverse.Create(dp);
                 float fireDamage = traverse.Field("fireDamage").GetValue<float>();
                 float fireLifetime = traverse.Field("fireLifetime").GetValue<float>();
 
-                // Логируем КАЖДЫЙ объект, даже если он не горит, для диагностики
                 Plugin.Log?.LogInfo(
-                    $"[FireExtinguisher]   -> '{dp.gameObject.name}' (enabled={dp.enabled}, fireDamage={fireDamage:F2}, fireLifetime={fireLifetime:F2}, path={GetFullPath(dp.transform)})"
+                    $"[FireExtinguisher]   -> '{dp.gameObject.name}' рядом (dist={distance:F1}, fireDamage={fireDamage:F2}, fireLifetime={fireLifetime:F2})"
                 );
 
-                if (fireDamage > 0f)
+                // Тушим, если очаг активен
+                if (fireLifetime > 0f || fireDamage > 0f)
                 {
-                    traverse.Field("fireLifetime").SetValue(0f);
-                    traverse.Field("fireDamage").SetValue(0f);
-                    dp.enabled = false;
-
                     Light fireLight = traverse.Field("fireLight").GetValue<Light>();
                     if (fireLight != null)
                     {
                         UnityEngine.Object.Destroy(fireLight.gameObject);
                     }
 
+                    // Просто и надежно уничтожаем сам игровой объект пожара
+                    UnityEngine.Object.Destroy(dp.gameObject);
+
                     extinguishedCount++;
-                    Plugin.Log?.LogInfo($"[FireExtinguisher]      ПОТУШЕН: '{dp.gameObject.name}'");
+                    Plugin.Log?.LogInfo($"[FireExtinguisher]      ПОТУШЕН И УДАЛЕН: '{dp.gameObject.name}'");
                 }
             }
 
